@@ -1,0 +1,57 @@
+name: Stage 3 Grader
+
+on:
+  workflow_dispatch:
+    inputs:
+      intern_repo:
+        description: "Intern GitHub repo URL"
+        required: true
+      intern_slack_id:
+        description: "Intern Slack user ID"
+        required: true
+      intern_github:
+        description: "Intern GitHub username"
+        required: true
+
+jobs:
+  grade:
+    name: Grade Submission
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout grader repo
+        uses: actions/checkout@v4
+
+      - name: Clone intern repo
+        run: |
+          git clone ${{ github.event.inputs.intern_repo }} intern_repo
+          cd intern_repo
+          echo "COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install grader dependencies
+        run: pip install pyyaml requests
+
+      - name: Run all grading checks
+        id: grade
+        run: python grader/grade.py intern_repo
+        env:
+          INTERN_GITHUB: ${{ github.event.inputs.intern_github }}
+          INTERN_SLACK_ID: ${{ github.event.inputs.intern_slack_id }}
+          INTERN_REPO: ${{ github.event.inputs.intern_repo }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Upload grade report
+        uses: actions/upload-artifact@v4
+        with:
+          name: grade-report
+          path: grade_report.json
+
+      - name: Post results to webhook
+        run: |
+          curl -sf -X POST ${{ secrets.GRADER_WEBHOOK_URL }} \
+            -H "Content-Type: application/json" \
+            -d @grade_report.json
